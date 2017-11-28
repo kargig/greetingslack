@@ -1,0 +1,12 @@
+[Unit]
+Description=greetingslack bot
+After=multi-user.target
+
+[Service]
+Type=idle
+Environment=SLACK_TOKEN=XXXX-XXXXXXXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXX
+Environment=DEBUG_CHANNEL_ID=CCCCCCCCC
+ExecStart=/path/to/greetingslack/greetingslack/bin/python /path/to/greetingslack/bot.py
+
+[Install]
+WantedBy=multi-user.target
