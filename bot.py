@@ -63,8 +63,11 @@ def is_debug_channel_join(msg):
         return False
 
 def welcome_me(msg):
-    if msg['type'] == 'message' and msg['text'] == '!welcome':
-        return True
+    if msg['type'] == 'message' and 'text' in msg.keys():
+        if msg['text'] == '!welcome':
+            return True
+        else:
+            return False
     else:
         return False
 
@@ -89,9 +92,9 @@ def add_quote(msg):
 
 def parse_message(message):
     m = json.loads(message)
+    #logging.debug(m)
     if is_team_join(m) or is_debug_channel_join(m) or welcome_me(m):
         user_id = m["user"]["id"] if is_team_join(m) else m["user"]
-        #logging.debug(m)
         getdata= {
                 'token': TOKEN,
                 'user': user_id
@@ -113,7 +116,7 @@ def parse_message(message):
         send_message = requests.post("https://slack.com/api/chat.postMessage", data=data)
         #logging.debug(send_message)
         logging.debug('HELLO SENT: ' + user_id)
-    elif is_message(m):
+    elif is_message(m) and 'text' in m.keys():
         ret = None
         #logging.debug(m)
         if m['text'][0] != '!':
@@ -258,7 +261,6 @@ class db_api:
     def __init__(self):
         """
         """
-
 
     def init_db(self):
         db = sqlite3.connect(DB_FILE)
