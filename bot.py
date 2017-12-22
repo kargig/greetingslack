@@ -45,6 +45,13 @@ except:
 
 ###############################################################
 
+def unescape(s):
+    s = s.replace("&lt;", "<")
+    s = s.replace("&gt;", ">")
+    # this has to be last:
+    s = s.replace("&amp;", "&")
+    return s
+
 def welcome_message():
     try:
         message = os.environ['WELCOME-MESSAGE']
@@ -232,6 +239,7 @@ class quote_api:
             quote_time = quote_time.replace('-', ':', 2)
 
         if quote_text:
+            quote_text = unescape(quote_text)
             final_text = '[' + 'ID:' + str(quote_id) + ' by:' + quote_user + ' at:' + quote_time + '] ' + quote_text
 
         return final_text
