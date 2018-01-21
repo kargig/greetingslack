@@ -15,8 +15,6 @@ import re
 logging.basicConfig(filename='bot.log', level=logging.DEBUG,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-WELCOME_FILE='/path/to/WELCOME_MESSAGE.txt'
-
 # Suppress InsecureRequestWarning
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
@@ -42,6 +40,11 @@ try:
         DB_FILE = os.environ['DB_FILE']
 except:
         DB_FILE = 'FALSE'
+
+try:
+        WELCOME_FILE = os.environ['WELCOME_FILE']
+except:
+        WELCOME_FILE = '/path/to/WELCOME_MESSAGE.txt'
 
 ###############################################################
 
