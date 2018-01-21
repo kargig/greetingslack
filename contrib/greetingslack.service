@@ -6,7 +6,11 @@ After=multi-user.target
 Type=idle
 Environment=SLACK_TOKEN=XXXX-XXXXXXXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXX
 Environment=DEBUG_CHANNEL_ID=CCCCCCCCC
+Environment=DB_FILE=/path/to/greetingslack/greetingslack.sqlite3
+Environment=WELCOME_FILE=/path/to/greetingslack/WELCOME_MESSAGE.txt
 ExecStart=/path/to/greetingslack/greetingslack/bin/python /path/to/greetingslack/bot.py
+RestartSec=10
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
