@@ -150,7 +150,11 @@ def parse_message(message):
         channeldata = requests.get("https://slack.com/api/channels.info", params=cdata)
         channeldata = channeldata.json()
         logging.debug(channeldata)
-        f_args = [userdata['user']['profile']['display_name'], channeldata['channel']['name'], m['text']]
+        try:
+            channel_name = channeldata['channel']['name']
+        except:
+            channel_name = m['channel']
+        f_args = [userdata['user']['profile']['display_name'], channel_name, m['text']]
         if cmd == '!quote':
             ret = quote_api().get_quote(*f_args)
         elif cmd == '!add':
