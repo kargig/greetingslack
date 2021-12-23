@@ -46,6 +46,11 @@ try:
 except:
     WELCOME_FILE = '/path/to/WELCOME_MESSAGE.txt'
 
+try:
+    COC_FILE = os.environ['COC_FILE']
+except:
+    COC_FILE = '/path/to/COC_FILE.txt'
+
 ###############################################################
 
 
@@ -73,6 +78,15 @@ def welcome_message():
     return message
 
 
+def coc_text():
+    try:
+        message = os.environ['COC-MESSAGE']
+    except:
+        with codecs.open(COC_FILE, 'r', encoding='utf8') as f:
+            message = f.read()
+    return message
+
+
 def is_team_join(msg):
     return msg['type'] == "team_join"
 
@@ -87,6 +101,16 @@ def is_debug_channel_join(msg):
 def welcome_me(msg):
     if msg['type'] == 'message' and 'text' in msg.keys():
         if msg['text'] == '!welcome':
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
+def coc_message(msg):
+    if msg['type'] == 'message' and 'text' in msg.keys():
+        if msg['text'] == '!coc':
             return True
         else:
             return False
@@ -122,13 +146,26 @@ def parse_message(message):
         logging.debug(message)
         return
     # logging.debug(m)
-    if is_team_join(m) or is_debug_channel_join(m) or welcome_me(m):
+    if coc_message(m):
+        channel_name = get_channel_name(m)
+        data = {
+                'token': TOKEN,
+                'channel': channel_name,
+                'text': coc_text(),
+                'parse': 'full',
+                'as_user': 'true',
+        }
+        if (UNFURL.lower() == "false"):
+            data['unfurl_link'] = 'false'
+            # logging.debug(data)
+            send_message = requests.post("https://slack.com/api/chat.postMessage", data=data)
+    elif is_team_join(m) or is_debug_channel_join(m) or welcome_me(m):
         user_id = m["user"]["id"] if is_team_join(m) else m["user"]
         getdata = {
                 'token': TOKEN,
-                'user': user_id
+                'users': user_id
                 }
-        userdata = requests.get("https://slack.com/api/im.open", params=getdata)
+        userdata = requests.get("https://slack.com/api/conversations.open", params=getdata)
         userdata = userdata.json()
         # logging.debug(userdata)
         dmchannel = userdata["channel"]["id"]
@@ -353,6 +390,7 @@ class quote_api:
         max_q = dba.query_maxid(query)
         ret = 'Quote ' + str(max_q) + ' added!'
         return ret
+
 
     def addurltodb(self, user, channel, url):
         ret = None
