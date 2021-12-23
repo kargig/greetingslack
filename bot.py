@@ -24,37 +24,37 @@ logging.basicConfig(filename='/backup/greetingslack/bot.log', level=logging.DEBU
 # Handle each one seperately
 try:
     TOKEN = os.environ['SLACK_TOKEN']
-except:
+except KeyError:
     TOKEN = 'Manually set the API Token if youre not running through heroku or have not set vars in ENV'
 
 try:
     UNFURL = os.environ['UNFURL_LINKS']
-except:
+except KeyError:
     UNFURL = 'FALSE'
 
 try:
     DEBUG_CHANNEL_ID = os.environ['DEBUG_CHANNEL_ID']
-except:
+except KeyError:
     DEBUG_CHANNEL_ID = 'Manually set the Channel if youre not running through heroku or have not set vars in ENV'
 
 try:
     DB_FILE = os.environ['DB_FILE']
-except:
+except KeyError:
     DB_FILE = 'FALSE'
 
 try:
     WELCOME_FILE = os.environ['WELCOME_FILE']
-except:
+except KeyError:
     WELCOME_FILE = '/path/to/WELCOME_MESSAGE.txt'
 
 try:
     DOWNLOAD_DIR = os.environ['DOWNLOAD_DIR']
-except:
+except KeyError:
     DOWNLOAD_DIR = '/tmp/'
 
 try:
     COC_FILE = os.environ['COC_FILE']
-except:
+except KeyError:
     COC_FILE = '/path/to/COC_FILE.txt'
 
 ###############################################################
@@ -78,7 +78,7 @@ def unescape(s):
 def welcome_message():
     try:
         message = os.environ['WELCOME_MESSAGE']
-    except:
+    except KeyError:
         with codecs.open(WELCOME_FILE, 'r', encoding='utf8') as f:
             message = f.read()
     return message
@@ -87,7 +87,7 @@ def welcome_message():
 def coc_text():
     try:
         message = os.environ['COC_MESSAGE']
-    except:
+    except KeyError:
         with codecs.open(COC_FILE, 'r', encoding='utf8') as f:
             message = f.read()
     return message
@@ -289,7 +289,7 @@ def get_channel_name(m):
     channeldata = channeldata.json()
     try:
         channel_name = channeldata['channel']['name']
-    except:
+    except KeyError:
         channel_name = m['channel']
     return(channel_name)
 
