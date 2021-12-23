@@ -10,6 +10,7 @@ import sys
 import sqlite3
 import time
 import re
+import hashlib
 
 # Suppress InsecureRequestWarning
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -45,6 +46,11 @@ try:
     WELCOME_FILE = os.environ['WELCOME_FILE']
 except:
     WELCOME_FILE = '/path/to/WELCOME_MESSAGE.txt'
+
+try:
+    DOWNLOAD_DIR = os.environ['DOWNLOAD_DIR']
+except:
+    DOWNLOAD_DIR = '/tmp/'
 
 try:
     COC_FILE = os.environ['COC_FILE']
@@ -182,6 +188,22 @@ def parse_message(message):
             send_message = requests.post("https://slack.com/api/chat.postMessage", data=data)
             # logging.debug(send_message)
             # logging.debug('HELLO SENT: ' + user_id)
+    elif is_message(m) and 'files' in m.keys():
+        ret = None
+        #logging.debug(m)
+        # just get the first file for now
+        zefile = m['files'][0]['url_private']
+        headers = {'Authorization': 'Bearer ' + TOKEN}
+        filedata = requests.get(zefile, headers=headers)
+        filename = m['files'][0]['name']
+        hashname = hashlib.sha256(filename).hexdigest()
+        savepath = DOWNLOAD_DIR + hashname
+        with open(savepath, 'wb') as f:
+            f.write(filedata.content)
+        displayname = get_display_name(m)
+        channel_name = get_channel_name(m)
+        f_args = [displayname, channel_name, hashname, filename]
+        quote_api().addfiletodb(*f_args)
     elif is_message(m) and 'text' in m.keys():
         ret = None
         if 'bot_id' in m.keys():
@@ -391,6 +413,14 @@ class quote_api:
         ret = 'Quote ' + str(max_q) + ' added!'
         return ret
 
+    def addfiletodb(self, user, channel, hashname, orig_name):
+        db = sqlite3.connect(DB_FILE)
+        dbc = db.cursor()
+        query = '''INSERT INTO FILES (FILE_DT, ADDED_BY, CHANNEL, HASH, ORIG_NAME) VALUES (?,?,?,?,?)'''
+        dbc.execute(query, (time.strftime('%H-%M-%S %d-%m-%Y'), user, channel, hashname, orig_name))
+        db.commit()
+        db.close()
+        return True
 
     def addurltodb(self, user, channel, url):
         ret = None
@@ -428,6 +458,13 @@ class db_api:
                                                     CHANNEL TEXT
                                                     )''')
 
+        dbc.execute('''CREATE TABLE IF NOT EXISTS FILES (ID INTEGER PRIMARY KEY,
+                                                    FILE_DT DATETIME,
+                                                    ADDED_BY TEXT,
+                                                    CHANNEL TEXT,
+                                                    HASH TEXT,
+                                                    ORIG_NAME TEXT
+                                                    )''')
         dbc.execute('''CREATE TABLE IF NOT EXISTS URLS (ID INTEGER PRIMARY KEY,
                                                     URL_DT DATETIME,
                                                     ADDED_BY TEXT,
