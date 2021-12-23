@@ -71,7 +71,7 @@ def unescape(s):
 
 def welcome_message():
     try:
-        message = os.environ['WELCOME-MESSAGE']
+        message = os.environ['WELCOME_MESSAGE']
     except:
         with codecs.open(WELCOME_FILE, 'r', encoding='utf8') as f:
             message = f.read()
@@ -80,7 +80,7 @@ def welcome_message():
 
 def coc_text():
     try:
-        message = os.environ['COC-MESSAGE']
+        message = os.environ['COC_MESSAGE']
     except:
         with codecs.open(COC_FILE, 'r', encoding='utf8') as f:
             message = f.read()
