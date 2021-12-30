@@ -22,40 +22,14 @@ logging.basicConfig(filename='/backup/greetingslack/bot.log', level=logging.DEBU
 
 # VARIABLES THAT YOU NEED TO SET MANUALLY IF NOT ON HEROKU
 # Handle each one seperately
-try:
-    TOKEN = os.environ['SLACK_TOKEN']
-except KeyError:
-    TOKEN = 'Manually set the API Token if youre not running through heroku or have not set vars in ENV'
 
-try:
-    UNFURL = os.environ['UNFURL_LINKS']
-except KeyError:
-    UNFURL = 'FALSE'
-
-try:
-    DEBUG_CHANNEL_ID = os.environ['DEBUG_CHANNEL_ID']
-except KeyError:
-    DEBUG_CHANNEL_ID = 'Manually set the Channel if youre not running through heroku or have not set vars in ENV'
-
-try:
-    DB_FILE = os.environ['DB_FILE']
-except KeyError:
-    DB_FILE = 'FALSE'
-
-try:
-    WELCOME_FILE = os.environ['WELCOME_FILE']
-except KeyError:
-    WELCOME_FILE = '/path/to/WELCOME_MESSAGE.txt'
-
-try:
-    DOWNLOAD_DIR = os.environ['DOWNLOAD_DIR']
-except KeyError:
-    DOWNLOAD_DIR = '/tmp/'
-
-try:
-    COC_FILE = os.environ['COC_FILE']
-except KeyError:
-    COC_FILE = '/path/to/COC_FILE.txt'
+TOKEN = os.environ.get('SLACK_TOKEN','Manually set the API Token if youre not running through heroku or have not set vars in ENV')
+UNFURL = os.environ.get('UNFURL_LINKS', 'FALSE')
+DEBUG_CHANNEL_ID = os.environ.get('DEBUG_CHANNEL_ID','Manually set the Channel if youre not running through heroku or have not set vars in ENV')
+DB_FILE = os.environ.get('DB_FILE','FALSE')
+WELCOME_FILE = os.environ.get('WELCOME_FILE','/path/to/WELCOME_MESSAGE.txt')
+DOWNLOAD_DIR = os.environ.get('DOWNLOAD_DIR','/tmp/')
+COC_FILE = os.environ.get('COC_FILE','/path/to/COC_FILE.txt')
 
 ###############################################################
 
