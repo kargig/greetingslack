@@ -11,6 +11,7 @@ import sqlite3
 import time
 import re
 import hashlib
+from functools import lru_cache
 
 # Suppress InsecureRequestWarning
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -225,9 +226,14 @@ def parse_message(message):
 
 def get_display_name(m):
     # logging.debug("GET_DISPLAY_NAME")
+    return request_display_name(user_id=m['user'])
+
+
+@lru_cache()
+def request_display_name(user_id):    
     udata = {
             'token': TOKEN,
-            'user': m['user']
+            'user': user_id
             }
     userdata = requests.get("https://slack.com/api/users.info", params=udata)
     userdata = userdata.json()
@@ -237,16 +243,25 @@ def get_display_name(m):
 
 def get_channel_name(m):
     # logging.debug("GET_CHANNEL_NAME")
+    return request_channel_name(channel_id=m['channel'])
+
+
+@lru_cache()        
+def request_channel_name(channel_id):
+    """
+    channel_id: String with the slack channel id to request from slack api
+    returns: string with either the slack name or the slack id
+    """
     cdata = {
             'token': TOKEN,
-            'channel': m['channel']
+            'channel': channel_id
             }
     channeldata = requests.get("https://slack.com/api/conversations.info", params=cdata)
     channeldata = channeldata.json()
     try:
         channel_name = channeldata['channel']['name']
     except KeyError:
-        channel_name = m['channel']
+        channel_name = channel_id
     return(channel_name)
 
 
