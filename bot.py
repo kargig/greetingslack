@@ -72,51 +72,33 @@ def is_team_join(msg):
 
 
 def is_debug_channel_join(msg):
-    if (msg['type'] == "member_joined_channel" and msg['channel'] == DEBUG_CHANNEL_ID):
-        return True
-    else:
-        return False
+    return (msg['type'] == "member_joined_channel" and msg['channel'] == DEBUG_CHANNEL_ID)
 
 
 def welcome_me(msg):
     if msg['type'] == 'message' and 'text' in msg.keys():
-        if msg['text'] == '!welcome':
-            return True
-        else:
-            return False
+        return msg['text'] == '!welcome'
     else:
         return False
 
 
 def coc_message(msg):
     if msg['type'] == 'message' and 'text' in msg.keys():
-        if msg['text'] == '!coc':
-            return True
-        else:
-            return False
+        return msg['text'] == '!coc'
     else:
         return False
 
 
 def is_message(msg):
-    if msg['type'] == 'message':
-        return True
-    else:
-        return False
+    return msg['type'] == 'message'
 
 
 def show_quote(msg):
-    if msg['type'] == 'message' and msg['text'] == '!quote':
-        return True
-    else:
-        return False
+    return msg['type'] == 'message' and msg['text'] == '!quote'
 
 
 def add_quote(msg):
-    if msg['type'] == 'message' and msg['text'] == '!add':
-        return True
-    else:
-        return False
+    return msg['type'] == 'message' and msg['text'] == '!add'
 
 
 def parse_message(message):
