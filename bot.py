@@ -229,7 +229,7 @@ def get_display_name(m):
     return request_display_name(user_id=m['user'])
 
 
-@lru_cache()
+@lru_cache(maxsize=32)
 def request_display_name(user_id):    
     udata = {
             'token': TOKEN,
@@ -246,7 +246,7 @@ def get_channel_name(m):
     return request_channel_name(channel_id=m['channel'])
 
 
-@lru_cache()        
+@lru_cache(maxsize=16)        
 def request_channel_name(channel_id):
     """
     channel_id: String with the slack channel id to request from slack api
