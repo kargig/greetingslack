@@ -11,6 +11,7 @@ import sqlite3
 import time
 import re
 import hashlib
+from functools import lru_cache
 
 # Suppress InsecureRequestWarning
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -22,40 +23,14 @@ logging.basicConfig(filename='/backup/greetingslack/bot.log', level=logging.DEBU
 
 # VARIABLES THAT YOU NEED TO SET MANUALLY IF NOT ON HEROKU
 # Handle each one seperately
-try:
-    TOKEN = os.environ['SLACK_TOKEN']
-except KeyError:
-    TOKEN = 'Manually set the API Token if youre not running through heroku or have not set vars in ENV'
 
-try:
-    UNFURL = os.environ['UNFURL_LINKS']
-except KeyError:
-    UNFURL = 'FALSE'
-
-try:
-    DEBUG_CHANNEL_ID = os.environ['DEBUG_CHANNEL_ID']
-except KeyError:
-    DEBUG_CHANNEL_ID = 'Manually set the Channel if youre not running through heroku or have not set vars in ENV'
-
-try:
-    DB_FILE = os.environ['DB_FILE']
-except KeyError:
-    DB_FILE = 'FALSE'
-
-try:
-    WELCOME_FILE = os.environ['WELCOME_FILE']
-except KeyError:
-    WELCOME_FILE = '/path/to/WELCOME_MESSAGE.txt'
-
-try:
-    DOWNLOAD_DIR = os.environ['DOWNLOAD_DIR']
-except KeyError:
-    DOWNLOAD_DIR = '/tmp/'
-
-try:
-    COC_FILE = os.environ['COC_FILE']
-except KeyError:
-    COC_FILE = '/path/to/COC_FILE.txt'
+TOKEN = os.environ.get('SLACK_TOKEN','Manually set the API Token if youre not running through heroku or have not set vars in ENV')
+UNFURL = os.environ.get('UNFURL_LINKS', 'FALSE')
+DEBUG_CHANNEL_ID = os.environ.get('DEBUG_CHANNEL_ID','Manually set the Channel if youre not running through heroku or have not set vars in ENV')
+DB_FILE = os.environ.get('DB_FILE','FALSE')
+WELCOME_FILE = os.environ.get('WELCOME_FILE','/path/to/WELCOME_MESSAGE.txt')
+DOWNLOAD_DIR = os.environ.get('DOWNLOAD_DIR','/tmp/')
+COC_FILE = os.environ.get('COC_FILE','/path/to/COC_FILE.txt')
 
 ###############################################################
 
@@ -98,51 +73,33 @@ def is_team_join(msg):
 
 
 def is_debug_channel_join(msg):
-    if (msg['type'] == "member_joined_channel" and msg['channel'] == DEBUG_CHANNEL_ID):
-        return True
-    else:
-        return False
+    return (msg['type'] == "member_joined_channel" and msg['channel'] == DEBUG_CHANNEL_ID)
 
 
 def welcome_me(msg):
     if msg['type'] == 'message' and 'text' in msg.keys():
-        if msg['text'] == '!welcome':
-            return True
-        else:
-            return False
+        return msg['text'] == '!welcome'
     else:
         return False
 
 
 def coc_message(msg):
     if msg['type'] == 'message' and 'text' in msg.keys():
-        if msg['text'] == '!coc':
-            return True
-        else:
-            return False
+        return msg['text'] == '!coc'
     else:
         return False
 
 
 def is_message(msg):
-    if msg['type'] == 'message':
-        return True
-    else:
-        return False
+    return msg['type'] == 'message'
 
 
 def show_quote(msg):
-    if msg['type'] == 'message' and msg['text'] == '!quote':
-        return True
-    else:
-        return False
+    return msg['type'] == 'message' and msg['text'] == '!quote'
 
 
 def add_quote(msg):
-    if msg['type'] == 'message' and msg['text'] == '!add':
-        return True
-    else:
-        return False
+    return msg['type'] == 'message' and msg['text'] == '!add'
 
 
 def parse_message(message):
@@ -269,9 +226,14 @@ def parse_message(message):
 
 def get_display_name(m):
     # logging.debug("GET_DISPLAY_NAME")
+    return request_display_name(user_id=m['user'])
+
+
+@lru_cache(maxsize=32)
+def request_display_name(user_id):    
     udata = {
             'token': TOKEN,
-            'user': m['user']
+            'user': user_id
             }
     userdata = requests.get("https://slack.com/api/users.info", params=udata)
     userdata = userdata.json()
@@ -281,16 +243,25 @@ def get_display_name(m):
 
 def get_channel_name(m):
     # logging.debug("GET_CHANNEL_NAME")
+    return request_channel_name(channel_id=m['channel'])
+
+
+@lru_cache(maxsize=16)        
+def request_channel_name(channel_id):
+    """
+    channel_id: String with the slack channel id to request from slack api
+    returns: string with either the slack name or the slack id
+    """
     cdata = {
             'token': TOKEN,
-            'channel': m['channel']
+            'channel': channel_id
             }
     channeldata = requests.get("https://slack.com/api/conversations.info", params=cdata)
     channeldata = channeldata.json()
     try:
         channel_name = channeldata['channel']['name']
     except KeyError:
-        channel_name = m['channel']
+        channel_name = channel_id
     return(channel_name)
 
 
