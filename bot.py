@@ -106,7 +106,7 @@ def parse_message(message):
     try:
         m = json.loads(message)
     except:
-        logging.debug(message)
+        # logging.debug(message)
         return
     # logging.debug(m)
     if coc_message(m):
@@ -121,7 +121,7 @@ def parse_message(message):
         if (UNFURL.lower() == "false"):
             data['unfurl_link'] = 'false'
             # logging.debug(data)
-            send_message = requests.post("https://slack.com/api/chat.postMessage", data=data)
+        send_message = requests.post("https://slack.com/api/chat.postMessage", data=data)
     elif is_team_join(m) or is_debug_channel_join(m) or welcome_me(m):
         user_id = m["user"]["id"] if is_team_join(m) else m["user"]
         getdata = {
@@ -142,9 +142,7 @@ def parse_message(message):
         if (UNFURL.lower() == "false"):
             data['unfurl_link'] = 'false'
             # logging.debug(data)
-            send_message = requests.post("https://slack.com/api/chat.postMessage", data=data)
-            # logging.debug(send_message)
-            # logging.debug('HELLO SENT: ' + user_id)
+        send_message = requests.post("https://slack.com/api/chat.postMessage", data=data)
     elif is_message(m) and 'files' in m.keys():
         ret = None
         #logging.debug(m)
