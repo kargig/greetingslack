@@ -1,0 +1,9 @@
+# This file contains variables for use in docker run
+# Remember that when changing them and alter the `-v` switches in `docker run` accordingly
+# Change all values to those that work for you
+
+SLACK_TOKEN=xoxb-111111111
+WELCOME_FILE=/usr/src/app/WELCOME_MESSAGE.txt
+COC_FILE=/usr/src/app/COC_MESSAGE.txt
+DOWNLOAD_DIR=/tmp/
+DB_FILE=/backup/greetingslack/greetingbot.sqlite3
