@@ -267,7 +267,7 @@ def request_channel_name(channel_id):
 
 # Connects to Slacks and initiates socket handshake
 def start_rtm():
-    r = requests.get("https://slack.com/api/rtm.start?token="+TOKEN)
+    r = requests.get("https://slack.com/api/rtm.connect?token="+TOKEN)
     r = r.json()
     # logging.debug(r)
     r = r["url"]
