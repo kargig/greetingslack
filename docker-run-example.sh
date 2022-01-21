@@ -18,4 +18,4 @@ docker run -d --rm -it \
 	-v $WORKDIR/bot.log:/backup/greetingslack/bot.log \
 	-v $WORKDIR/greetingbot.sqlite3:/backup/greetingslack/greetingbot.sqlite3 \
 	--name greetingbot \
-    greetingbot-alpine
+    greetingbot-slim
