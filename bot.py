@@ -17,7 +17,8 @@ from functools import lru_cache
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-logging.basicConfig(filename='/backup/greetingslack/bot.log', level=logging.DEBUG,
+LOG_FILE = os.environ.get('LOG_FILE', '/backup/greetingslack/bot.log')
+logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(funcName)s() - %(levelname)s - %(message)s')
 
 
@@ -225,6 +226,7 @@ def parse_message(message):
                 ret = quote_api().addtodb(*f_args)
 
             elif cmd == '!cache':
+                # logging.debug(args)
                 ret = handle_cache_invokes(args)
 
             if ret:
@@ -249,6 +251,9 @@ def handle_cache_invokes(args):
         name_stats = str(request_channel_name.cache_info())
         channel_stats = str(request_channel_name.cache_info())
         ret = "Display Name cache stats: {}\nChannel Name cache stats: {}".format(name_stats, channel_stats)
+    else:
+        ret = "Use `!cache stats` for statistics, or `!cache clear` for clearing LRU cache"
+    return ret
 
 
 def get_display_name(m):
