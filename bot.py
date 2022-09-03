@@ -17,7 +17,8 @@ from functools import lru_cache
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-logging.basicConfig(filename='/backup/greetingslack/bot.log', level=logging.DEBUG,
+LOG_FILE = os.environ.get('LOG_FILE', '/backup/greetingslack/bot.log')
+logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(funcName)s() - %(levelname)s - %(message)s')
 
 
@@ -102,6 +103,14 @@ def add_quote(msg):
     return msg['type'] == 'message' and msg['text'] == '!add'
 
 
+def bot_called(msg):
+    # logging.debug(msg)
+    if is_message(msg) and 'text' in msg.keys():
+        return msg['text'].startswith('!greetbot')
+    else:
+        return False
+
+
 def parse_message(message):
     try:
         m = json.loads(message)
@@ -109,6 +118,13 @@ def parse_message(message):
         # logging.debug(message)
         return
     # logging.debug(m)
+
+    if bot_called(m):
+        logging.debug(m.get('text').split())
+        logging.debug(request_channel_name.cache_info())
+        logging.debug(request_display_name.cache_info())
+
+
     if coc_message(m):
         channel_name = get_channel_name(m)
         data = {
@@ -210,6 +226,10 @@ def parse_message(message):
             elif cmd == '!add':
                 ret = quote_api().addtodb(*f_args)
 
+            elif cmd == '!cache':
+                # logging.debug(args)
+                ret = handle_cache_invokes(args)
+
             if ret:
                 ret = ret.replace('@', '')
                 data = {
@@ -221,6 +241,20 @@ def parse_message(message):
                 }
                 send_message = requests.post("https://slack.com/api/chat.postMessage", data=data, headers={"Authorization": "Bearer " + TOKEN})
                 # logging.debug(send_message)
+
+
+def handle_cache_invokes(args):
+    if args == 'clear':
+        name_cache_cleared = str(request_display_name.cache_clear())
+        channel_cache_cleared = str(request_channel_name.cache_clear())
+        ret = "Cache cleared {}{}".format(name_cache_cleared, channel_cache_cleared)    
+    elif 'stats' in args:
+        name_stats = str(request_channel_name.cache_info())
+        channel_stats = str(request_channel_name.cache_info())
+        ret = "Display Name cache stats: {}\nChannel Name cache stats: {}".format(name_stats, channel_stats)
+    else:
+        ret = "Use `!cache stats` for statistics, or `!cache clear` for clearing LRU cache"
+    return ret
 
 
 def get_display_name(m):
