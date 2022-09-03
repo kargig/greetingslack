@@ -152,7 +152,9 @@ def parse_message(message):
         headers = {'Authorization': 'Bearer ' + TOKEN}
         filedata = requests.get(zefile, headers=headers)
         filename = m['files'][0]['name']
-        hashname = hashlib.sha256(filename.encode("utf-8")).hexdigest()
+        timestamp = m['files'][0]['timestamp']
+        id = m['files'][0]['id']
+        hashname = hashlib.sha256(filename.encode("utf-8")+str(timestamp).encode("utf-8")+str(id).encode("utf-8")).hexdigest()
         savepath = DOWNLOAD_DIR + hashname
         with open(savepath, 'wb') as f:
             f.write(filedata.content)
@@ -340,7 +342,6 @@ class quote_api:
         if out and (len(out) == 4):
             quote_user = out[2]  # user
             quote_time = out[3]  # time
-            quote_time = quote_time.replace('-', ':', 2)
 
         if quote_text:
             quote_text = unescape(quote_text)
@@ -360,7 +361,6 @@ class quote_api:
             url_dt = out[0]       # timestamp
             url_user = out[1]     # username
             url_channel = out[2]  # channel
-            url_dt = url_dt.replace('-', ':', 2)
             final_text = '[' + 'URL: ' + str(url) + ' posted first on: #' + url_channel + ' by: ' + url_user + ' at: ' + url_dt + '] '
             # logging.debug(final_text)
             return final_text
@@ -375,7 +375,7 @@ class quote_api:
         query = '''INSERT INTO quotes_fts (QUOTE) VALUES (?)'''
         dbc.execute(query, (quote,))
         query = '''INSERT INTO quotes (QUOTE_DT, ADDED_BY, CHANNEL) VALUES (?, ?, ?)'''
-        dbc.execute(query, (time.strftime('%H-%M-%S %d-%m-%Y'), user, channel))
+        dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel))
         db.commit()
         db.close()
 
@@ -389,7 +389,7 @@ class quote_api:
         db = sqlite3.connect(DB_FILE)
         dbc = db.cursor()
         query = '''INSERT INTO FILES (FILE_DT, ADDED_BY, CHANNEL, HASH, ORIG_NAME) VALUES (?,?,?,?,?)'''
-        dbc.execute(query, (time.strftime('%H-%M-%S %d-%m-%Y'), user, channel, hashname, orig_name))
+        dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel, hashname, orig_name))
         db.commit()
         db.close()
         return True
@@ -400,7 +400,7 @@ class quote_api:
         db = sqlite3.connect(DB_FILE)
         dbc = db.cursor()
         query = '''INSERT INTO URLS (URL_DT, ADDED_BY, CHANNEL, URL) VALUES (?,?,?,?)'''
-        dbc.execute(query, (time.strftime('%H-%M-%S %d-%m-%Y'), user, channel, url))
+        dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel, url))
         db.commit()
         db.close()
 
