@@ -151,7 +151,7 @@ def parse_message(message):
         headers = {'Authorization': 'Bearer ' + TOKEN}
         filedata = requests.get(zefile, headers=headers)
         filename = m['files'][0]['name']
-        hashname = hashlib.sha256(filename).hexdigest()
+        hashname = hashlib.sha256(filename.encode("utf-8")).hexdigest()
         savepath = DOWNLOAD_DIR + hashname
         with open(savepath, 'wb') as f:
             f.write(filedata.content)
