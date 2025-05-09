@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 import codecs
 import logging
-import websocket
 import json
 import requests
 import os
@@ -12,6 +11,10 @@ import time
 import re
 import hashlib
 from functools import lru_cache
+from slack_sdk.socket_mode import SocketModeClient
+from slack_sdk.web import WebClient
+from slack_sdk.socket_mode.request import SocketModeRequest
+from slack_sdk.socket_mode.response import SocketModeResponse
 
 # Suppress InsecureRequestWarning
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -20,11 +23,10 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 logging.basicConfig(filename='/backup/greetingslack/bot.log', level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(funcName)s() - %(levelname)s - %(message)s')
 
-
-# VARIABLES THAT YOU NEED TO SET MANUALLY IF NOT ON HEROKU
-# Handle each one seperately
-
-TOKEN = os.environ.get('SLACK_TOKEN','Manually set the API Token if youre not running through heroku or have not set vars in ENV')
+# ENV VARS
+SLACK_APP_TOKEN = os.environ.get('SLACK_APP_TOKEN')  # xapp-...
+SLACK_BOT_TOKEN = os.environ.get('SLACK_BOT_TOKEN')  # xoxb-...
+TOKEN = SLACK_BOT_TOKEN  # For legacy code compatibility
 UNFURL = os.environ.get('UNFURL_LINKS', 'FALSE')
 DEBUG_CHANNEL_ID = os.environ.get('DEBUG_CHANNEL_ID','Manually set the Channel if youre not running through heroku or have not set vars in ENV')
 DB_FILE = os.environ.get('DB_FILE','FALSE')
@@ -102,6 +104,14 @@ def add_quote(msg):
     return msg['type'] == 'message' and msg['text'] == '!add'
 
 
+def bot_called(msg):
+    # logging.debug(msg)
+    if is_message(msg) and 'text' in msg.keys():
+        return msg['text'].startswith('!greetbot')
+    else:
+        return False
+
+
 def parse_message(message):
     try:
         m = json.loads(message)
@@ -109,8 +119,27 @@ def parse_message(message):
         # logging.debug(message)
         return
     # logging.debug(m)
+
+    if bot_called(m):
+        channel_name = request_channel_name(channel_id=m['channel'])
+        data = {
+                'token': TOKEN,
+                'channel': channel_name,
+                'text': 'Channel cache: '+ str(request_channel_name.cache_info()) +
+                  '\n Display name cache: ' + str(request_display_name.cache_info()),
+                'parse': 'full',
+                'as_user': 'true',
+        }
+        if (UNFURL.lower() == "false"):
+            data['unfurl_link'] = 'false'
+            # logging.debug(data)
+        send_message = requests.post("https://slack.com/api/chat.postMessage", data=data)
+        #logging.debug(request_channel_name.cache_info())
+        #logging.debug(request_display_name.cache_info())
+
+
     if coc_message(m):
-        channel_name = get_channel_name(m)
+        channel_name = request_channel_name(channel_id=m['channel'])
         data = {
                 'token': TOKEN,
                 'channel': channel_name,
@@ -145,19 +174,21 @@ def parse_message(message):
             # logging.debug(data)
         send_message = requests.post("https://slack.com/api/chat.postMessage", data=data, headers={"Authorization": "Bearer " + TOKEN})
     elif is_message(m) and 'files' in m.keys():
-        ret = None
         #logging.debug(m)
+        ret = None
         # just get the first file for now
         zefile = m['files'][0]['url_private']
         headers = {'Authorization': 'Bearer ' + TOKEN}
         filedata = requests.get(zefile, headers=headers)
         filename = m['files'][0]['name']
-        hashname = hashlib.sha256(filename.encode("utf-8")).hexdigest()
+        timestamp = m['files'][0]['timestamp']
+        id = m['files'][0]['id']
+        hashname = hashlib.sha256(filename.encode("utf-8")+str(timestamp).encode("utf-8")+str(id).encode("utf-8")).hexdigest()
         savepath = DOWNLOAD_DIR + hashname
         with open(savepath, 'wb') as f:
             f.write(filedata.content)
-        displayname = get_display_name(m)
-        channel_name = get_channel_name(m)
+        displayname = request_display_name(user_id=m['user'])
+        channel_name = request_channel_name(channel_id=m['channel'])
         f_args = [displayname, channel_name, hashname, filename]
         quote_api().addfiletodb(*f_args)
     elif is_message(m) and 'text' in m.keys():
@@ -173,8 +204,8 @@ def parse_message(message):
                     if len(urls) > 0:
                         # logging.debug(m['blocks']['elements']['elements']['url'])
                         logging.debug("Found URL: " + m['blocks'][0]['elements'][0]['elements'][0]['url'])
-                        displayname = get_display_name(m)
-                        channel_name = get_channel_name(m)
+                        displayname = request_display_name(user_id=m['user'])
+                        channel_name = request_channel_name(channel_id=m['channel'])
                         # trim last character from url which is a '>' added by slack
                         if urls[0][:-1] == '>':
                             final_URL = urls[0][:-1]
@@ -202,13 +233,16 @@ def parse_message(message):
             except ValueError:
                 cmd = m['text']
                 args = ''
-            displayname = get_display_name(m)
-            channel_name = get_channel_name(m)
+            displayname = request_display_name(user_id=m['user'])
+            channel_name = request_channel_name(channel_id=m['channel'])
             f_args = [displayname, channel_name, m['text']]
             if cmd == '!quote':
                 ret = quote_api().get_quote(*f_args)
             elif cmd == '!add':
                 ret = quote_api().addtodb(*f_args)
+
+            elif cmd == '!cache':
+                ret = handle_cache_invokes(args)
 
             if ret:
                 ret = ret.replace('@', '')
@@ -223,30 +257,44 @@ def parse_message(message):
                 # logging.debug(send_message)
 
 
-def get_display_name(m):
-    # logging.debug("GET_DISPLAY_NAME")
-    return request_display_name(user_id=m['user'])
+def handle_cache_invokes(args):
+    if args == 'clear':
+        name_cache_cleared = str(request_display_name.cache_clear())
+        channel_cache_cleared = str(request_channel_name.cache_clear())
+        ret = "Cache cleared {}{}".format(name_cache_cleared, channel_cache_cleared)
+    elif 'stats' in args:
+        name_stats = str(request_channel_name.cache_info())
+        channel_stats = str(request_channel_name.cache_info())
+        ret = "Display Name cache stats: {}\nChannel Name cache stats: {}".format(name_stats, channel_stats)
+    else:
+        ret = "Use `!cache stats` for statistics, or `!cache clear` for clearing LRU cache"
+    return(ret)
 
 
-@lru_cache(maxsize=32)
-def request_display_name(user_id):    
-    udata = {
-            'token': TOKEN,
+@lru_cache(maxsize=256)
+def request_display_name(user_id):
+    try:
+        udata = {
+            'token': TOKEN,  # Include token first
             'user': user_id
-            }
-    udata.pop('token')  # fails if present (for non legacy token)
-    userdata = requests.get("https://slack.com/api/users.info", params=udata, headers={"Authorization": "Bearer " + TOKEN})
-    userdata = userdata.json()
-    # logging.debug(userdata)
-    return(userdata['user']['profile']['display_name'])
+        }
+        udata.pop('token')  # Remove from params for non-legacy token
+        userdata = requests.get(
+            "https://slack.com/api/users.info",
+            params=udata,
+            headers={"Authorization": f"Bearer {TOKEN}"}  # Pass token in header
+        )
+        userdata.raise_for_status()  # Raise exception for bad status codes
+        response = userdata.json()
+        if not response.get('ok'):
+            raise Exception(f"Slack API error: {response.get('error')}")
+        return response['user']['profile']['display_name']
+    except Exception as e:
+        logging.error(f"Error fetching display name for user {user_id}: {str(e)}")
+        return None
 
 
-def get_channel_name(m):
-    # logging.debug("GET_CHANNEL_NAME")
-    return request_channel_name(channel_id=m['channel'])
-
-
-@lru_cache(maxsize=16)        
+@lru_cache(maxsize=16)
 def request_channel_name(channel_id):
     """
     channel_id: String with the slack channel id to request from slack api
@@ -264,40 +312,6 @@ def request_channel_name(channel_id):
     except KeyError:
         channel_name = channel_id
     return(channel_name)
-
-
-# Connects to Slacks and initiates socket handshake
-def start_rtm():
-    r = requests.get("https://slack.com/api/rtm.connect", headers={"Authorization": "Bearer " + TOKEN})
-    r = r.json()
-    # logging.debug(r)
-    r = r["url"]
-    return r
-
-
-def on_message(ws, message):
-    parse_message(message)
-
-
-def on_error(ws, error):
-    try:
-        logger = logging.getLogger()
-        logger.error("SOME ERROR HAS HAPPENED: " + error)
-    except:
-        print('Interrupted')
-        try:
-            sys.exit(0)
-        except SystemExit:
-            os._exit(0)
-
-
-def on_close(ws):
-    logging.info('Connection Closed')
-
-
-def on_open(ws):
-    logging.info("Connection Started - Auto Greeting new joiners to the network")
-
 
 class quote_api:
 
@@ -340,7 +354,6 @@ class quote_api:
         if out and (len(out) == 4):
             quote_user = out[2]  # user
             quote_time = out[3]  # time
-            quote_time = quote_time.replace('-', ':', 2)
 
         if quote_text:
             quote_text = unescape(quote_text)
@@ -360,7 +373,6 @@ class quote_api:
             url_dt = out[0]       # timestamp
             url_user = out[1]     # username
             url_channel = out[2]  # channel
-            url_dt = url_dt.replace('-', ':', 2)
             final_text = '[' + 'URL: ' + str(url) + ' posted first on: #' + url_channel + ' by: ' + url_user + ' at: ' + url_dt + '] '
             # logging.debug(final_text)
             return final_text
@@ -375,7 +387,7 @@ class quote_api:
         query = '''INSERT INTO quotes_fts (QUOTE) VALUES (?)'''
         dbc.execute(query, (quote,))
         query = '''INSERT INTO quotes (QUOTE_DT, ADDED_BY, CHANNEL) VALUES (?, ?, ?)'''
-        dbc.execute(query, (time.strftime('%H-%M-%S %d-%m-%Y'), user, channel))
+        dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel))
         db.commit()
         db.close()
 
@@ -389,7 +401,7 @@ class quote_api:
         db = sqlite3.connect(DB_FILE)
         dbc = db.cursor()
         query = '''INSERT INTO FILES (FILE_DT, ADDED_BY, CHANNEL, HASH, ORIG_NAME) VALUES (?,?,?,?,?)'''
-        dbc.execute(query, (time.strftime('%H-%M-%S %d-%m-%Y'), user, channel, hashname, orig_name))
+        dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel, hashname, orig_name))
         db.commit()
         db.close()
         return True
@@ -400,7 +412,7 @@ class quote_api:
         db = sqlite3.connect(DB_FILE)
         dbc = db.cursor()
         query = '''INSERT INTO URLS (URL_DT, ADDED_BY, CHANNEL, URL) VALUES (?,?,?,?)'''
-        dbc.execute(query, (time.strftime('%H-%M-%S %d-%m-%Y'), user, channel, url))
+        dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel, url))
         db.commit()
         db.close()
 
@@ -414,69 +426,181 @@ class quote_api:
 class db_api:
 
     def __init__(self):
-        """
-        """
+        self.db_file = DB_FILE
 
     def init_db(self):
-        db = sqlite3.connect(DB_FILE)
-        dbc = db.cursor()
-        dbc.execute('''CREATE VIRTUAL TABLE IF NOT EXISTS QUOTES_FTS USING fts5(
-                                                    QUOTE
-                                                    )''')
+        """Initialize the database schema"""
+        with sqlite3.connect(self.db_file) as conn:
+            cursor = conn.cursor()
+            cursor.executescript("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS QUOTES_FTS USING fts5(
+                    QUOTE
+                );
 
-        dbc.execute('''CREATE TABLE IF NOT EXISTS QUOTES (ID INTEGER PRIMARY KEY,
-                                                    QUOTE_DT DATETIME,
-                                                    ADDED_BY TEXT,
-                                                    CHANNEL TEXT
-                                                    )''')
+                CREATE TABLE IF NOT EXISTS QUOTES (
+                    ID INTEGER PRIMARY KEY,
+                    QUOTE_DT DATETIME,
+                    ADDED_BY TEXT,
+                    CHANNEL TEXT
+                );
 
-        dbc.execute('''CREATE TABLE IF NOT EXISTS FILES (ID INTEGER PRIMARY KEY,
-                                                    FILE_DT DATETIME,
-                                                    ADDED_BY TEXT,
-                                                    CHANNEL TEXT,
-                                                    HASH TEXT,
-                                                    ORIG_NAME TEXT
-                                                    )''')
-        dbc.execute('''CREATE TABLE IF NOT EXISTS URLS (ID INTEGER PRIMARY KEY,
-                                                    URL_DT DATETIME,
-                                                    ADDED_BY TEXT,
-                                                    CHANNEL TEXT,
-                                                    URL TEXT
-                                                    )''')
+                CREATE TABLE IF NOT EXISTS FILES (
+                    ID INTEGER PRIMARY KEY,
+                    FILE_DT DATETIME,
+                    ADDED_BY TEXT,
+                    CHANNEL TEXT,
+                    HASH TEXT,
+                    ORIG_NAME TEXT
+                );
 
-        db.close()
+                CREATE TABLE IF NOT EXISTS URLS (
+                    ID INTEGER PRIMARY KEY,
+                    URL_DT DATETIME,
+                    ADDED_BY TEXT,
+                    CHANNEL TEXT,
+                    URL TEXT
+                );
+            """)
 
     def query_db(self, query, pattern=None):
-        db = sqlite3.connect(DB_FILE)
-        dbc = db.cursor()
-
-        if pattern:
-            dbc.execute(query, (pattern,))
-        else:
-            dbc.execute(query,)
-
-        out = dbc.fetchone()
-        db.close()
-        return out
+        """Execute a query and return results"""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                if pattern:
+                    cursor.execute(query, (pattern,))
+                else:
+                    cursor.execute(query)
+                return cursor.fetchone()
+        except sqlite3.Error as e:
+            logging.error(f"Database query error: {e}")
+            return None
 
     def add_dbrow(self, query, quote, user=None, channel=None):
-        db = sqlite3.connect(DB_FILE)
-        dbc = db.cursor()
-        dbc.execute(query, (quote, time.strftime('%H-%M-%S %d-%m-%Y'), user, channel))
-        db.commit()
-        db.close()
+        """Add a row to the database"""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (quote, time.strftime('%H-%M-%S %d-%m-%Y'), user, channel))
+                conn.commit()
+        except sqlite3.Error as e:
+            logging.error(f"Database insert error: {e}")
 
     def query_maxid(self, query):
-        db = sqlite3.connect(DB_FILE)
-        dbc = db.cursor()
-        dbc.execute(query,)
-        max_q = dbc.fetchone()
-        db.close()
-        return max_q[0]
+        """Get the maximum ID from a query"""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute(query)
+                result = cursor.fetchone()
+                return result[0] if result else None
+        except sqlite3.Error as e:
+            logging.error(f"Database maxid query error: {e}")
+            return None
 
+
+# --- Socket Mode Event Handlers ---
+web_client = WebClient(token=SLACK_BOT_TOKEN)
+
+# Helper to send a message
+def send_message(channel, text):
+    web_client.chat_postMessage(channel=channel, text=text, unfurl_links=(UNFURL.lower() == 'true'))
+
+def handle_event(event):
+    # Reuse the logic from parse_message, but adapt to the new event structure
+    m = event
+    if bot_called(m):
+        channel_name = request_channel_name(channel_id=m['channel'])
+        text = 'Channel cache: '+ str(request_channel_name.cache_info()) + \
+               '\n Display name cache: ' + str(request_display_name.cache_info())
+        send_message(channel_name, text)
+    elif coc_message(m):
+        channel_name = request_channel_name(channel_id=m['channel'])
+        send_message(channel_name, coc_text())
+    elif is_team_join(m) or is_debug_channel_join(m) or welcome_me(m):
+        user_id = m["user"]["id"] if is_team_join(m) else m["user"]
+        # Open a DM
+        resp = web_client.conversations_open(users=user_id)
+        dmchannel = resp["channel"]["id"]
+        send_message(dmchannel, welcome_message())
+    elif is_message(m) and 'files' in m.keys():
+        zefile = m['files'][0]['url_private']
+        headers = {'Authorization': 'Bearer ' + TOKEN}
+        filedata = requests.get(zefile, headers=headers)
+        filename = m['files'][0]['name']
+        timestamp = m['files'][0]['timestamp']
+        id = m['files'][0]['id']
+        hashname = hashlib.sha256(filename.encode("utf-8")+str(timestamp).encode("utf-8")+str(id).encode("utf-8")).hexdigest()
+        savepath = DOWNLOAD_DIR + hashname
+        with open(savepath, 'wb') as f:
+            f.write(filedata.content)
+        displayname = request_display_name(user_id=m['user'])
+        channel_name = request_channel_name(channel_id=m['channel'])
+        f_args = [displayname, channel_name, hashname, filename]
+        quote_api().addfiletodb(*f_args)
+    elif is_message(m) and 'text' in m.keys():
+        ret = None
+        if 'bot_id' in m.keys():
+            return
+        if m['text'][0] != '!':
+            if 'blocks' in m.keys():
+                if 'url' in m['blocks'][0]['elements'][0]['elements'][0].keys():
+                    urls = FindURL(m['blocks'][0]['elements'][0]['elements'][0]['url'])
+                    if len(urls) > 0:
+                        displayname = request_display_name(user_id=m['user'])
+                        channel_name = request_channel_name(channel_id=m['channel'])
+                        if urls[0][:-1] == '>':
+                            final_URL = urls[0][:-1]
+                        else:
+                            final_URL = urls[0]
+                        ret = quote_api().get_url(final_URL)
+                        if ret:
+                            ret = ret.replace('@', '')
+                            send_message(m['channel'], ret)
+                            return
+                        f_args = [displayname, channel_name, final_URL]
+                        ret = quote_api().addurltodb(*f_args)
+                    return
+        elif m['text'][0] == '!':
+            try:
+                cmd, args = m['text'].split(' ', 1)
+            except ValueError:
+                cmd = m['text']
+                args = ''
+            displayname = request_display_name(user_id=m['user'])
+            channel_name = request_channel_name(channel_id=m['channel'])
+            f_args = [displayname, channel_name, m['text']]
+            if cmd == '!quote':
+                ret = quote_api().get_quote(*f_args)
+            elif cmd == '!add':
+                ret = quote_api().addtodb(*f_args)
+            elif cmd == '!cache':
+                ret = handle_cache_invokes(args)
+            if ret:
+                ret = ret.replace('@', '')
+                send_message(m['channel'], ret)
+
+# Main Socket Mode event handler
+
+def process(client: SocketModeClient, req: SocketModeRequest):
+    if req.type == "events_api":
+        event = req.payload["event"]
+        # Only handle message, team_join, member_joined_channel
+        if event.get('type') in ["message", "team_join", "member_joined_channel"]:
+            handle_event(event)
+        # Acknowledge the event
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
 
 if __name__ == "__main__":
+    # Check for required tokens
+    if not SLACK_APP_TOKEN or not SLACK_BOT_TOKEN:
+        print("SLACK_APP_TOKEN and SLACK_BOT_TOKEN must be set in the environment.")
+        sys.exit(1)
     db_api().init_db()
-    r = start_rtm()
-    ws = websocket.WebSocketApp(r, on_message=on_message, on_error=on_error, on_close=on_close, on_open=on_open)
-    ws.run_forever()
+    socket_mode_client = SocketModeClient(
+        app_token=SLACK_APP_TOKEN,
+        web_client=web_client
+    )
+    socket_mode_client.socket_mode_request_listeners.append(process)
+    socket_mode_client.connect()
+    import time; time.sleep(999999)
