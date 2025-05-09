@@ -1,0 +1,14 @@
+FROM python:3.7.12-slim-buster
+
+WORKDIR /usr/src/app
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Just copy only what is needed
+COPY COC_MESSAGE.txt .
+COPY WELCOME_MESSAGE.txt .
+COPY README.md .
+COPY bot.py .
+
+CMD [ "python", "./bot.py" ]
