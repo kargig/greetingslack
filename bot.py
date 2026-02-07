@@ -206,11 +206,8 @@ def parse_message(message):
                         logging.debug("Found URL: " + m['blocks'][0]['elements'][0]['elements'][0]['url'])
                         displayname = request_display_name(user_id=m['user'])
                         channel_name = request_channel_name(channel_id=m['channel'])
-                        # trim last character from url which is a '>' added by slack
-                        if urls[0][:-1] == '>':
-                            final_URL = urls[0][:-1]
-                        else:
-                            final_URL = urls[0]
+                        # trim trailing '>' added by Slack in link formatting
+                        final_URL = urls[0][:-1] if urls[0].endswith('>') else urls[0]
                         ret = quote_api().get_url(final_URL)
                         if ret:
                             ret = ret.replace('@', '')
@@ -365,7 +362,7 @@ class quote_api:
         dba = db_api()
         final_text = None
         out = None
-        query = '''SELECT URL_DT,ADDED_BY,CHANNEL,URL FROM URLS WHERE URL == ?'''
+        query = '''SELECT URL_DT,ADDED_BY,CHANNEL,URL,MENTION_COUNT FROM URLS WHERE URL == ?'''
         pattern = url
         if query:
             out = dba.query_db(query, pattern)
@@ -373,7 +370,12 @@ class quote_api:
             url_dt = out[0]       # timestamp
             url_user = out[1]     # username
             url_channel = out[2]  # channel
-            final_text = '[' + 'URL: ' + str(url) + ' posted first on: #' + url_channel + ' by: ' + url_user + ' at: ' + url_dt + '] '
+            # Increment mention count for this URL and get new count (handles missing column in old DBs)
+            new_count = dba.increment_url_mention(url)
+            if new_count is None:
+                new_count = (out[4] + 1) if len(out) > 4 and out[4] is not None else 2
+            final_text = ('[' + 'URL: ' + str(url) + ' posted first on: #' + url_channel + ' by: ' + url_user + ' at: ' + url_dt +
+                         ' | mentioned ' + str(new_count) + ' times so far] ')
             # logging.debug(final_text)
             return final_text
         return False
@@ -411,7 +413,7 @@ class quote_api:
         dba = db_api()
         db = sqlite3.connect(DB_FILE)
         dbc = db.cursor()
-        query = '''INSERT INTO URLS (URL_DT, ADDED_BY, CHANNEL, URL) VALUES (?,?,?,?)'''
+        query = '''INSERT INTO URLS (URL_DT, ADDED_BY, CHANNEL, URL, MENTION_COUNT) VALUES (?,?,?,?,1)'''
         dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel, url))
         db.commit()
         db.close()
@@ -458,7 +460,8 @@ class db_api:
                     URL_DT DATETIME,
                     ADDED_BY TEXT,
                     CHANNEL TEXT,
-                    URL TEXT
+                    URL TEXT,
+                    MENTION_COUNT INTEGER DEFAULT 1
                 );
             """)
 
@@ -496,6 +499,23 @@ class db_api:
                 return result[0] if result else None
         except sqlite3.Error as e:
             logging.error(f"Database maxid query error: {e}")
+            return None
+
+    def increment_url_mention(self, url):
+        """Increment MENTION_COUNT for the given URL and return the new count."""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    '''UPDATE URLS SET MENTION_COUNT = COALESCE(MENTION_COUNT, 1) + 1 WHERE URL = ?''',
+                    (url,)
+                )
+                conn.commit()
+                cursor.execute('''SELECT MENTION_COUNT FROM URLS WHERE URL = ?''', (url,))
+                row = cursor.fetchone()
+                return row[0] if row else None
+        except sqlite3.Error as e:
+            logging.error(f"Database increment_url_mention error: {e}")
             return None
 
 
@@ -549,10 +569,8 @@ def handle_event(event):
                     if len(urls) > 0:
                         displayname = request_display_name(user_id=m['user'])
                         channel_name = request_channel_name(channel_id=m['channel'])
-                        if urls[0][:-1] == '>':
-                            final_URL = urls[0][:-1]
-                        else:
-                            final_URL = urls[0]
+                        # trim trailing '>' added by Slack in link formatting
+                        final_URL = urls[0][:-1] if urls[0].endswith('>') else urls[0]
                         ret = quote_api().get_url(final_URL)
                         if ret:
                             ret = ret.replace('@', '')
