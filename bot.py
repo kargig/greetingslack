@@ -113,38 +113,12 @@ def add_quote(msg):
     return msg['type'] == 'message' and msg['text'] == '!add'
 
 
-def bot_called(msg):
-    # logging.debug(msg)
-    if is_message(msg) and 'text' in msg.keys():
-        return msg['text'].startswith('!greetbot')
-    else:
-        return False
-
-
 def parse_message(message):
     try:
         m = json.loads(message)
     except (ValueError, json.JSONDecodeError):
         return
     # logging.debug(m)
-
-    if bot_called(m):
-        channel_name = request_channel_name(channel_id=m['channel'])
-        data = {
-                'token': TOKEN,
-                'channel': channel_name,
-                'text': 'Channel cache: '+ str(request_channel_name.cache_info()) +
-                  '\n Display name cache: ' + str(request_display_name.cache_info()),
-                'parse': 'full',
-                'as_user': 'true',
-        }
-        if (UNFURL.lower() == "false"):
-            data['unfurl_link'] = 'false'
-            # logging.debug(data)
-        send_message = requests.post("https://slack.com/api/chat.postMessage", data=data)
-        #logging.debug(request_channel_name.cache_info())
-        #logging.debug(request_display_name.cache_info())
-
 
     if coc_message(m):
         channel_name = request_channel_name(channel_id=m['channel'])
@@ -247,7 +221,9 @@ def parse_message(message):
             displayname = request_display_name(user_id=m['user'])
             channel_name = request_channel_name(channel_id=m['channel'])
             f_args = [displayname, channel_name, text]
-            if cmd == '!quote':
+            if cmd == '!help':
+                ret = get_help_text()
+            elif cmd == '!quote':
                 ret = quote_api().get_quote(*f_args)
             elif cmd == '!add':
                 ret = quote_api().addtodb(*f_args)
@@ -268,6 +244,24 @@ def parse_message(message):
                 }
                 send_message = requests.post("https://slack.com/api/chat.postMessage", data=data, headers={"Authorization": "Bearer " + TOKEN})
                 # logging.debug(send_message)
+
+
+def get_help_text():
+    """Return instructions for all bot commands."""
+    return """*Bot commands*
+• `!help` — show this message
+• `!welcome` — send the welcome message to you in DM
+• `!coc` — show code of conduct
+• `!quote` — random quote
+• `!quote <search>` — search quotes by text
+• `!quote id:N` — quote by ID
+• `!add <text>` — add a quote
+• `!cache stats` — show cache statistics
+• `!cache clear` — clear display/channel caches
+• `!stats quotes` — top quote adders
+• `!stats urls` — top URL adders
+• `!stats mentions` — most mentioned users in quotes
+• *Links:* Post a link — first time it’s stored; after that the bot shows who posted it first and how many times it’s been mentioned."""
 
 
 def handle_cache_invokes(args):
@@ -614,12 +608,7 @@ def send_message(channel, text):
 def handle_event(event):
     # Reuse the logic from parse_message, but adapt to the new event structure
     m = event
-    if bot_called(m):
-        channel_name = request_channel_name(channel_id=m['channel'])
-        text = 'Channel cache: '+ str(request_channel_name.cache_info()) + \
-               '\n Display name cache: ' + str(request_display_name.cache_info())
-        send_message(channel_name, text)
-    elif coc_message(m):
+    if coc_message(m):
         channel_name = request_channel_name(channel_id=m['channel'])
         send_message(channel_name, coc_text())
     elif is_team_join(m) or is_debug_channel_join(m) or welcome_me(m):
@@ -685,7 +674,9 @@ def handle_event(event):
             displayname = request_display_name(user_id=m['user'])
             channel_name = request_channel_name(channel_id=m['channel'])
             f_args = [displayname, channel_name, text]
-            if cmd == '!quote':
+            if cmd == '!help':
+                ret = get_help_text()
+            elif cmd == '!quote':
                 ret = quote_api().get_quote(*f_args)
             elif cmd == '!add':
                 ret = quote_api().addtodb(*f_args)
