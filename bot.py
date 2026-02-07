@@ -702,11 +702,10 @@ def handle_event(event):
 def process(client: SocketModeClient, req: SocketModeRequest):
     if req.type == "events_api":
         event = req.payload["event"]
-        # Only handle message, team_join, member_joined_channel
+        # Acknowledge immediately so Slack does not retry (avoids duplicate replies)
+        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
         if event.get('type') in ["message", "team_join", "member_joined_channel"]:
             handle_event(event)
-        # Acknowledge the event
-        client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
 
 if __name__ == "__main__":
     # Check for required tokens
