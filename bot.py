@@ -10,6 +10,7 @@ import sqlite3
 import time
 import re
 import hashlib
+from collections import Counter
 from functools import lru_cache
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.web import WebClient
@@ -35,6 +36,14 @@ DOWNLOAD_DIR = os.environ.get('DOWNLOAD_DIR','/tmp/')
 COC_FILE = os.environ.get('COC_FILE','/path/to/COC_FILE.txt')
 
 ###############################################################
+
+
+# Slack user mention in text: <@U01234ABCD> or profile link https://app.slack.com/team/U01234ABCD|name
+SLACK_MENTION_RE = re.compile(r'<@(U[A-Z0-9]+)>')
+SLACK_TEAM_LINK_RE = re.compile(r'app\.slack\.com/team/(U[A-Z0-9]+)')
+# IRC-style / bracket username at start or anywhere: <ebal>, <kyriakos> (exclude <@, <http, <#)
+BRACKET_NAME_RE = re.compile(r'<(?!@|https?://|#)([a-zA-Z0-9_]+)>')
+SLACK_ID_RE = re.compile(r'^U[A-Z0-9]+$')
 
 
 def FindURL(string):
@@ -240,6 +249,8 @@ def parse_message(message):
 
             elif cmd == '!cache':
                 ret = handle_cache_invokes(args)
+            elif cmd == '!stats':
+                ret = handle_stats_invokes(args)
 
             if ret:
                 ret = ret.replace('@', '')
@@ -256,16 +267,71 @@ def parse_message(message):
 
 def handle_cache_invokes(args):
     if args == 'clear':
-        name_cache_cleared = str(request_display_name.cache_clear())
-        channel_cache_cleared = str(request_channel_name.cache_clear())
-        ret = "Cache cleared {}{}".format(name_cache_cleared, channel_cache_cleared)
+        request_display_name.cache_clear()
+        request_channel_name.cache_clear()
+        ret = "Display name and channel caches cleared."
     elif 'stats' in args:
-        name_stats = str(request_channel_name.cache_info())
+        name_stats = str(request_display_name.cache_info())
         channel_stats = str(request_channel_name.cache_info())
         ret = "Display Name cache stats: {}\nChannel Name cache stats: {}".format(name_stats, channel_stats)
     else:
         ret = "Use `!cache stats` for statistics, or `!cache clear` for clearing LRU cache"
     return(ret)
+
+
+def handle_stats_invokes(args):
+    """Handle !stats quotes and !stats urls for leaderboards."""
+    dba = db_api()
+    limit = 10
+    arg = args.strip().lower() if args else ''
+    if arg == 'quotes':
+        rows = dba.query_db_many(
+            '''SELECT ADDED_BY, COUNT(*) AS cnt FROM quotes GROUP BY ADDED_BY ORDER BY cnt DESC LIMIT ?''',
+            (limit,),
+        )
+        if not rows:
+            return "No quotes in the database yet."
+        lines = ["Top quote adders:"]
+        for i, (user, cnt) in enumerate(rows, 1):
+            lines.append("{}. {} — {}".format(i, user or '?', cnt))
+        return '\n'.join(lines)
+    elif arg == 'urls':
+        rows = dba.query_db_many(
+            '''SELECT ADDED_BY, COUNT(*) AS cnt FROM URLS GROUP BY ADDED_BY ORDER BY cnt DESC LIMIT ?''',
+            (limit,),
+        )
+        if not rows:
+            return "No URLs in the database yet."
+        lines = ["Top URL adders:"]
+        for i, (user, cnt) in enumerate(rows, 1):
+            lines.append("{}. {} — {}".format(i, user or '?', cnt))
+        return '\n'.join(lines)
+    elif arg == 'mentions':
+        # Most often mentioned: <@U...>, app.slack.com/team/U..., and <name> (bracket usernames)
+        quote_rows = dba.query_db_many('''SELECT quote FROM quotes_fts''')
+        raw_counts = Counter()
+        for (quote_text,) in quote_rows:
+            if quote_text:
+                text = unescape(quote_text)
+                raw_counts.update(SLACK_MENTION_RE.findall(text))
+                raw_counts.update(SLACK_TEAM_LINK_RE.findall(text))
+                raw_counts.update(BRACKET_NAME_RE.findall(text))
+        if not raw_counts:
+            return "No user mentions found in quotes yet."
+        # Merge by canonical name: resolve Slack IDs to display name so <@U...> and <ebal> combine
+        merged = Counter()
+        for key, cnt in raw_counts.items():
+            if SLACK_ID_RE.match(key):
+                canonical = request_display_name(key) or key
+            else:
+                canonical = key
+            merged[canonical] += cnt
+        lines = ["Most mentioned users in quotes:"]
+        for i, (name, cnt) in enumerate(merged.most_common(limit), 1):
+            lines.append("{}. {} — {} mention{}".format(i, name, cnt, 's' if cnt != 1 else ''))
+        return '\n'.join(lines)
+    else:
+        return "Use `!stats quotes` (top quote adders), `!stats urls` (top URL adders), or `!stats mentions` (most mentioned in quotes)."
 
 
 @lru_cache(maxsize=256)
@@ -479,6 +545,20 @@ class db_api:
             logging.error(f"Database query error: {e}")
             return None
 
+    def query_db_many(self, query, params=None):
+        """Execute a query and return all rows. params is an optional tuple for ? placeholders."""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                if params is not None:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+                return cursor.fetchall()
+        except sqlite3.Error as e:
+            logging.error(f"Database query error: {e}")
+            return []
+
     def add_dbrow(self, query, quote, user=None, channel=None):
         """Add a row to the database"""
         try:
@@ -594,6 +674,8 @@ def handle_event(event):
                 ret = quote_api().addtodb(*f_args)
             elif cmd == '!cache':
                 ret = handle_cache_invokes(args)
+            elif cmd == '!stats':
+                ret = handle_stats_invokes(args)
             if ret:
                 ret = ret.replace('@', '')
                 send_message(m['channel'], ret)
