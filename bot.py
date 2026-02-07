@@ -124,8 +124,7 @@ def bot_called(msg):
 def parse_message(message):
     try:
         m = json.loads(message)
-    except:
-        # logging.debug(message)
+    except (ValueError, json.JSONDecodeError):
         return
     # logging.debug(m)
 
@@ -169,7 +168,9 @@ def parse_message(message):
         getdata.pop('token')  # fails if present (for non legacy token)
         userdata = requests.get("https://slack.com/api/conversations.open", params=getdata, headers={"Authorization": "Bearer " + TOKEN})
         userdata = userdata.json()
-        # logging.debug(userdata)
+        if not userdata.get('ok') or 'channel' not in userdata:
+            logging.error("conversations.open failed: %s", userdata.get('error', 'unknown'))
+            return
         dmchannel = userdata["channel"]["id"]
         data = {
                 'token': TOKEN,
@@ -182,9 +183,7 @@ def parse_message(message):
             data['unfurl_link'] = 'false'
             # logging.debug(data)
         send_message = requests.post("https://slack.com/api/chat.postMessage", data=data, headers={"Authorization": "Bearer " + TOKEN})
-    elif is_message(m) and 'files' in m.keys():
-        #logging.debug(m)
-        ret = None
+    elif is_message(m) and 'files' in m.keys() and m.get('files'):
         # just get the first file for now
         zefile = m['files'][0]['url_private']
         headers = {'Authorization': 'Bearer ' + TOKEN}
@@ -204,15 +203,21 @@ def parse_message(message):
         ret = None
         if 'bot_id' in m.keys():
             return
-        if m['text'][0] != '!':
+        text = m.get('text') or ''
+        if not text:
+            return
+        if text[0] != '!':
             # logging.debug(m)
             # u'blocks': [{u'elements': [{u'elements': [{u'url': u'http://koko.org', u'text': u'koko.org', u'type': u'link'}]
             if 'blocks' in m.keys():
-                if 'url' in m['blocks'][0]['elements'][0]['elements'][0].keys():
-                    urls = FindURL(m['blocks'][0]['elements'][0]['elements'][0]['url'])
+                try:
+                    link_block = m['blocks'][0]['elements'][0]['elements'][0]
+                except (KeyError, IndexError, TypeError):
+                    link_block = None
+                if isinstance(link_block, dict) and 'url' in link_block:
+                    urls = FindURL(link_block['url'])
                     if len(urls) > 0:
-                        # logging.debug(m['blocks']['elements']['elements']['url'])
-                        logging.debug("Found URL: " + m['blocks'][0]['elements'][0]['elements'][0]['url'])
+                        logging.debug("Found URL: " + link_block['url'])
                         displayname = request_display_name(user_id=m['user'])
                         channel_name = request_channel_name(channel_id=m['channel'])
                         # trim trailing '>' added by Slack in link formatting
@@ -233,15 +238,15 @@ def parse_message(message):
                         f_args = [displayname, channel_name, final_URL]
                         ret = quote_api().addurltodb(*f_args)
                     return
-        elif m['text'][0] == '!':
+        elif text[0] == '!':
             try:
-                cmd, args = m['text'].split(' ', 1)
+                cmd, args = text.split(' ', 1)
             except ValueError:
-                cmd = m['text']
+                cmd = text
                 args = ''
             displayname = request_display_name(user_id=m['user'])
             channel_name = request_channel_name(channel_id=m['channel'])
-            f_args = [displayname, channel_name, m['text']]
+            f_args = [displayname, channel_name, text]
             if cmd == '!quote':
                 ret = quote_api().get_quote(*f_args)
             elif cmd == '!add':
@@ -619,11 +624,16 @@ def handle_event(event):
         send_message(channel_name, coc_text())
     elif is_team_join(m) or is_debug_channel_join(m) or welcome_me(m):
         user_id = m["user"]["id"] if is_team_join(m) else m["user"]
-        # Open a DM
-        resp = web_client.conversations_open(users=user_id)
-        dmchannel = resp["channel"]["id"]
-        send_message(dmchannel, welcome_message())
-    elif is_message(m) and 'files' in m.keys():
+        try:
+            resp = web_client.conversations_open(users=user_id)
+            if not resp.get("ok") or "channel" not in resp:
+                logging.error("conversations_open failed: %s", resp.get("error", "unknown"))
+            else:
+                dmchannel = resp["channel"]["id"]
+                send_message(dmchannel, welcome_message())
+        except (KeyError, TypeError, AttributeError) as e:
+            logging.error("conversations_open response error: %s", e)
+    elif is_message(m) and 'files' in m.keys() and m.get('files'):
         zefile = m['files'][0]['url_private']
         headers = {'Authorization': 'Bearer ' + TOKEN}
         filedata = requests.get(zefile, headers=headers)
@@ -642,10 +652,17 @@ def handle_event(event):
         ret = None
         if 'bot_id' in m.keys():
             return
-        if m['text'][0] != '!':
+        text = m.get('text') or ''
+        if not text:
+            return
+        if text[0] != '!':
             if 'blocks' in m.keys():
-                if 'url' in m['blocks'][0]['elements'][0]['elements'][0].keys():
-                    urls = FindURL(m['blocks'][0]['elements'][0]['elements'][0]['url'])
+                try:
+                    link_block = m['blocks'][0]['elements'][0]['elements'][0]
+                except (KeyError, IndexError, TypeError):
+                    link_block = None
+                if isinstance(link_block, dict) and 'url' in link_block:
+                    urls = FindURL(link_block['url'])
                     if len(urls) > 0:
                         displayname = request_display_name(user_id=m['user'])
                         channel_name = request_channel_name(channel_id=m['channel'])
@@ -659,15 +676,15 @@ def handle_event(event):
                         f_args = [displayname, channel_name, final_URL]
                         ret = quote_api().addurltodb(*f_args)
                     return
-        elif m['text'][0] == '!':
+        elif text[0] == '!':
             try:
-                cmd, args = m['text'].split(' ', 1)
+                cmd, args = text.split(' ', 1)
             except ValueError:
-                cmd = m['text']
+                cmd = text
                 args = ''
             displayname = request_display_name(user_id=m['user'])
             channel_name = request_channel_name(channel_id=m['channel'])
-            f_args = [displayname, channel_name, m['text']]
+            f_args = [displayname, channel_name, text]
             if cmd == '!quote':
                 ret = quote_api().get_quote(*f_args)
             elif cmd == '!add':
