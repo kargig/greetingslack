@@ -232,6 +232,8 @@ def parse_message(message):
                 ret = handle_cache_invokes(args)
             elif cmd == '!stats':
                 ret = handle_stats_invokes(args)
+            elif cmd == '!channels':
+                ret = get_bot_channels()
 
             if ret:
                 ret = ret.replace('@', '')
@@ -261,6 +263,7 @@ def get_help_text():
 • `!stats quotes` — top quote adders
 • `!stats urls` — top URL adders
 • `!stats mentions` — most mentioned users in quotes
+• `!channels` — list channels I'm in
 • *Links:* Post a link — first time it’s stored; after that the bot shows who posted it first and how many times it’s been mentioned."""
 
 
@@ -374,6 +377,46 @@ def request_channel_name(channel_id):
     except KeyError:
         channel_name = channel_id
     return(channel_name)
+
+
+def get_bot_channels():
+    """Return a list of channels the bot is in (users.conversations API)."""
+    try:
+        channels = []
+        cursor = None
+        while True:
+            # Only public_channel: requires channels:read. Adding private_channel
+            # requires groups:read (not just groups:history).
+            params = {
+                "types": "public_channel",
+                "limit": 200,
+            }
+            if cursor:
+                params["cursor"] = cursor
+            resp = requests.get(
+                "https://api.slack.com/api/users.conversations",
+                params=params,
+                headers={"Authorization": "Bearer " + TOKEN},
+            )
+            data = resp.json()
+            if not data.get("ok"):
+                logging.error("users.conversations failed: %s", data.get("error", "unknown"))
+                return "Could not fetch channel list: " + str(data.get("error", "unknown"))
+            for ch in data.get("channels", []):
+                name = ch.get("name")
+                if name:
+                    channels.append("#" + name)
+            cursor = data.get("response_metadata", {}).get("next_cursor")
+            if not cursor:
+                break
+        if not channels:
+            return "I'm not in any channels yet."
+        channels.sort(key=lambda s: s.lower())
+        return "Channels I'm in ({}): {}".format(len(channels), ", ".join(channels))
+    except Exception as e:
+        logging.exception("get_bot_channels failed")
+        return "Error fetching channels: " + str(e)
+
 
 class quote_api:
 
@@ -684,6 +727,8 @@ def handle_event(event):
                 ret = handle_cache_invokes(args)
             elif cmd == '!stats':
                 ret = handle_stats_invokes(args)
+            elif cmd == '!channels':
+                ret = get_bot_channels()
             if ret:
                 ret = ret.replace('@', '')
                 send_message(m['channel'], ret)
