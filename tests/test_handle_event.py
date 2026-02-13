@@ -68,8 +68,12 @@ class TestHandleEventCommands:
         assert "Quote" in send.call_args[0][1] and "added" in send.call_args[0][1]
 
     def test_channels_calls_send(self):
-        with patch("bot.requests.get") as m:
-            m.return_value.json.return_value = {"ok": True, "channels": [{"name": "general"}], "response_metadata": {"next_cursor": ""}}
+        with patch.object(bot, "web_client") as wc:
+            wc.users_conversations.return_value = {
+                "ok": True,
+                "channels": [{"name": "general"}],
+                "response_metadata": {"next_cursor": ""},
+            }
             with patch.object(bot, "request_display_name", return_value="u"):
                 with patch.object(bot, "request_channel_name", return_value="c"):
                     with patch.object(bot, "send_message") as send:

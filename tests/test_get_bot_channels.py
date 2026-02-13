@@ -1,12 +1,11 @@
-"""Tests for get_bot_channels (Slack API)."""
+"""Tests for get_bot_channels (Slack API via WebClient)."""
 from unittest.mock import patch, MagicMock
 
 import bot
 
 
 def test_get_bot_channels_success():
-    mock_response = MagicMock()
-    mock_response.json.return_value = {
+    resp = {
         "ok": True,
         "channels": [
             {"name": "general"},
@@ -14,8 +13,10 @@ def test_get_bot_channels_success():
         ],
         "response_metadata": {"next_cursor": ""},
     }
-    with patch("bot.requests.get", return_value=mock_response):
+    with patch.object(bot, "web_client") as wc:
+        wc.users_conversations.return_value = resp
         ret = bot.get_bot_channels()
+    wc.users_conversations.assert_called_once()
     assert "general" in ret
     assert "random" in ret
     assert "#general" in ret
@@ -25,42 +26,41 @@ def test_get_bot_channels_success():
 def test_get_bot_channels_pagination():
     """Test that multiple pages are requested when next_cursor is set."""
     call_count = 0
-    def side_effect(*args, **kwargs):
+
+    def side_effect(**kwargs):
         nonlocal call_count
         call_count += 1
-        cursor = kwargs.get("params", {}).get("cursor", "")
-        mock = MagicMock()
+        cursor = kwargs.get("cursor", "")
         if cursor == "":
-            mock.json.return_value = {
+            return {
                 "ok": True,
                 "channels": [{"name": "first"}],
                 "response_metadata": {"next_cursor": "page2"},
             }
         else:
-            mock.json.return_value = {
+            return {
                 "ok": True,
                 "channels": [{"name": "second"}],
                 "response_metadata": {"next_cursor": ""},
             }
-        return mock
-    with patch("bot.requests.get", side_effect=side_effect):
+
+    with patch.object(bot, "web_client") as wc:
+        wc.users_conversations.side_effect = side_effect
         ret = bot.get_bot_channels()
     assert call_count == 2
     assert "first" in ret and "second" in ret
 
 
 def test_get_bot_channels_api_error():
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"ok": False, "error": "invalid_auth"}
-    with patch("bot.requests.get", return_value=mock_response):
+    with patch.object(bot, "web_client") as wc:
+        wc.users_conversations.return_value = {"ok": False, "error": "invalid_auth"}
         ret = bot.get_bot_channels()
     assert "invalid_auth" in ret or "Could not" in ret
 
 
-def test_get_bot_channels_uses_slack_com_host():
-    """Regression: endpoint must be slack.com, not api.slack.com."""
-    with patch("bot.requests.get") as m:
-        m.return_value.json.return_value = {"ok": True, "channels": [], "response_metadata": {"next_cursor": ""}}
+def test_get_bot_channels_uses_webclient():
+    """Regression: ensure WebClient.users_conversations is used."""
+    with patch.object(bot, "web_client") as wc:
+        wc.users_conversations.return_value = {"ok": True, "channels": [], "response_metadata": {"next_cursor": ""}}
         bot.get_bot_channels()
-    call_url = m.call_args[0][0]
-    assert call_url == "https://slack.com/api/users.conversations", "Wrong API host (fix 1.1)"
+    wc.users_conversations.assert_called_once()

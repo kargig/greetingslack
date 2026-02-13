@@ -196,21 +196,13 @@ def handle_stats_invokes(args):
 @lru_cache(maxsize=256)
 def request_display_name(user_id):
     try:
-        udata = {
-            'token': TOKEN,  # Include token first
-            'user': user_id
-        }
-        udata.pop('token')  # Remove from params for non-legacy token
-        userdata = requests.get(
-            "https://slack.com/api/users.info",
-            params=udata,
-            headers={"Authorization": f"Bearer {TOKEN}"}  # Pass token in header
-        )
-        userdata.raise_for_status()  # Raise exception for bad status codes
-        response = userdata.json()
+        # Use Slack WebClient instead of raw HTTP requests
+        response = web_client.users_info(user=user_id)
         if not response.get('ok'):
             raise Exception(f"Slack API error: {response.get('error')}")
-        return response['user']['profile']['display_name']
+        profile = response['user'].get('profile', {})
+        # Prefer display_name, fall back to real name or id
+        return profile.get('display_name') or profile.get('real_name') or user_id
     except Exception as e:
         logging.error(f"Error fetching display name for user {user_id}: {str(e)}")
         return None
@@ -222,18 +214,16 @@ def request_channel_name(channel_id):
     channel_id: String with the slack channel id to request from slack api
     returns: string with either the slack name or the slack id
     """
-    cdata = {
-            'token': TOKEN,
-            'channel': channel_id
-            }
-    cdata.pop('token')  # fails if present (for non legacy token)
-    channeldata = requests.get("https://slack.com/api/conversations.info", params=cdata, headers={"Authorization": "Bearer " + TOKEN})
-    channeldata = channeldata.json()
     try:
-        channel_name = channeldata['channel']['name']
-    except KeyError:
-        channel_name = channel_id
-    return(channel_name)
+        # Use Slack WebClient conversations_info
+        response = web_client.conversations_info(channel=channel_id)
+        if not response.get("ok"):
+            raise Exception(response.get("error", "unknown_error"))
+        return response["channel"]["name"]
+    except Exception as e:
+        logging.error(f"Error fetching channel name for {channel_id}: {str(e)}")
+        # Fallback to returning the id so we at least show something
+        return channel_id
 
 
 def get_bot_channels():
@@ -244,18 +234,15 @@ def get_bot_channels():
         while True:
             # Only public_channel: requires channels:read. Adding private_channel
             # requires groups:read (not just groups:history).
-            params = {
+            # Only public_channel: requires channels:read. Adding private_channel
+            # requires groups:read (not just groups:history).
+            kwargs = {
                 "types": "public_channel",
                 "limit": 200,
             }
             if cursor:
-                params["cursor"] = cursor
-            resp = requests.get(
-                "https://slack.com/api/users.conversations",
-                params=params,
-                headers={"Authorization": "Bearer " + TOKEN},
-            )
-            data = resp.json()
+                kwargs["cursor"] = cursor
+            data = web_client.users_conversations(**kwargs)
             if not data.get("ok"):
                 logging.error("users.conversations failed: %s", data.get("error", "unknown"))
                 return "Could not fetch channel list: " + str(data.get("error", "unknown"))
@@ -611,7 +598,7 @@ if __name__ == "__main__":
     db_api().init_db()
     socket_mode_client = SocketModeClient(
         app_token=SLACK_APP_TOKEN,
-        web_client=web_client
+        web_client=web_client,
     )
     socket_mode_client.socket_mode_request_listeners.append(process)
     socket_mode_client.connect()
