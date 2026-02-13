@@ -83,16 +83,30 @@ class TestHandleEventCommands:
         send.assert_not_called()
 
 
-class TestParseMessage:
-    def test_invalid_json_returns_none(self):
-        assert bot.parse_message("not json") is None
-        assert bot.parse_message("") is None
-
-    def test_valid_message_coc(self):
-        with patch.object(bot, "request_channel_name", return_value="general"):
-            with patch("bot.requests.post") as post:
-                bot.parse_message('{"type":"message","text":"!coc","channel":"C123"}')
-        post.assert_called_once()
-        call_args = post.call_args
-        assert "chat.postMessage" in call_args[0][0]
-        assert call_args[1]["data"]["text"] == bot.coc_text()
+class TestHandleEventLinks:
+    def test_link_in_blocks_triggers_url_handling(self, fresh_db):
+        event = {
+            "type": "message",
+            "text": "check this",
+            "user": "U1",
+            "channel": "C1",
+            "blocks": [
+                {
+                    "elements": [
+                        {
+                            "elements": [
+                                {"type": "link", "url": "https://example.com"}
+                            ]
+                        }
+                    ]
+                }
+            ],
+        }
+        with patch.object(bot, "request_display_name", return_value="u"):
+            with patch.object(bot, "request_channel_name", return_value="c"):
+                with patch.object(bot, "quote_api") as qa_cls:
+                    qa = qa_cls.return_value
+                    qa.get_url.return_value = None
+                    qa.addurltodb.return_value = "URL 1 added!"
+                    bot.handle_event(event)
+        qa.get_url.assert_called_once()

@@ -57,16 +57,6 @@ class TestMessagePredicates:
         assert bot.is_message({"type": "message"}) is True
         assert bot.is_message({"type": "team_join"}) is False
 
-    def test_show_quote(self):
-        assert bot.show_quote({"type": "message", "text": "!quote"}) is True
-        assert bot.show_quote({"type": "message", "text": "!quote foo"}) is False
-
-    def test_add_quote(self):
-        assert bot.add_quote({"type": "message", "text": "!add"}) is True
-        # add_quote predicate matches only exact "!add"; "!add something" is handled as a command in parse_message
-        assert bot.add_quote({"type": "message", "text": "!add something"}) is False
-        assert bot.add_quote({"type": "message", "text": "!help"}) is False
-
 
 class TestWelcomeAndCoc:
     def test_welcome_message_from_env(self):

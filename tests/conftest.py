@@ -4,6 +4,13 @@ import sys
 import tempfile
 import logging
 
+# Ensure project root (with bot.py) is importable even when pytest is run in
+# ways that don't automatically add it to sys.path.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))  # one level above tests/
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+
 # Set env so bot module can be imported without missing vars or writing to real paths
 def _setup_test_env():
     os.environ.setdefault("DB_FILE", os.path.join(tempfile.gettempdir(), "greetingslack_test.sqlite"))
