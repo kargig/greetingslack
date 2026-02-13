@@ -394,7 +394,7 @@ def get_bot_channels():
             if cursor:
                 params["cursor"] = cursor
             resp = requests.get(
-                "https://api.slack.com/api/users.conversations",
+                "https://slack.com/api/users.conversations",
                 params=params,
                 headers={"Authorization": "Bearer " + TOKEN},
             )
@@ -489,48 +489,34 @@ class quote_api:
         return False
 
     def addtodb(self, user, channel, msg):
-        ret = None
         dba = db_api()
-        db = sqlite3.connect(DB_FILE)
-        dbc = db.cursor()
         quote = ' ' . join(msg.split(' ')[1:])
-        query = '''INSERT INTO quotes_fts (QUOTE) VALUES (?)'''
-        dbc.execute(query, (quote,))
-        query = '''INSERT INTO quotes (QUOTE_DT, ADDED_BY, CHANNEL) VALUES (?, ?, ?)'''
-        dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel))
-        db.commit()
-        db.close()
-
-        # No intention of deleting, ever...
-        query = '''SELECT MAX(rowid) FROM quotes'''
-        max_q = dba.query_maxid(query)
-        ret = 'Quote ' + str(max_q) + ' added!'
-        return ret
+        ts = time.strftime('%Y-%m-%d %H:%M:%S')
+        dba.execute_and_commit([
+            ('''INSERT INTO quotes_fts (QUOTE) VALUES (?)''', (quote,)),
+            ('''INSERT INTO quotes (QUOTE_DT, ADDED_BY, CHANNEL) VALUES (?, ?, ?)''', (ts, user, channel)),
+        ])
+        max_q = dba.query_maxid('''SELECT MAX(rowid) FROM quotes''')
+        return 'Quote ' + str(max_q) + ' added!'
 
     def addfiletodb(self, user, channel, hashname, orig_name):
-        db = sqlite3.connect(DB_FILE)
-        dbc = db.cursor()
-        query = '''INSERT INTO FILES (FILE_DT, ADDED_BY, CHANNEL, HASH, ORIG_NAME) VALUES (?,?,?,?,?)'''
-        dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel, hashname, orig_name))
-        db.commit()
-        db.close()
+        dba = db_api()
+        ts = time.strftime('%Y-%m-%d %H:%M:%S')
+        dba.execute_and_commit([
+            ('''INSERT INTO FILES (FILE_DT, ADDED_BY, CHANNEL, HASH, ORIG_NAME) VALUES (?,?,?,?,?)''',
+             (ts, user, channel, hashname, orig_name)),
+        ])
         return True
 
     def addurltodb(self, user, channel, url):
-        ret = None
         dba = db_api()
-        db = sqlite3.connect(DB_FILE)
-        dbc = db.cursor()
-        query = '''INSERT INTO URLS (URL_DT, ADDED_BY, CHANNEL, URL, MENTION_COUNT) VALUES (?,?,?,?,1)'''
-        dbc.execute(query, (time.strftime('%Y-%m-%d %H:%M:%S'), user, channel, url))
-        db.commit()
-        db.close()
-
-        # No intention of deleting, ever...
-        query = '''SELECT MAX(rowid) FROM URLS'''
-        max_q = dba.query_maxid(query)
-        ret = 'URL ' + str(max_q) + ' added!'
-        return ret
+        ts = time.strftime('%Y-%m-%d %H:%M:%S')
+        dba.execute_and_commit([
+            ('''INSERT INTO URLS (URL_DT, ADDED_BY, CHANNEL, URL, MENTION_COUNT) VALUES (?,?,?,?,1)''',
+             (ts, user, channel, url)),
+        ])
+        max_q = dba.query_maxid('''SELECT MAX(rowid) FROM URLS''')
+        return 'URL ' + str(max_q) + ' added!'
 
 
 class db_api:
@@ -622,6 +608,22 @@ class db_api:
         except sqlite3.Error as e:
             logging.error(f"Database maxid query error: {e}")
             return None
+
+    def execute_and_commit(self, operations):
+        """Execute a sequence of (query, params) tuples in one transaction and commit.
+        params may be None for statements with no parameters."""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                for query, params in operations:
+                    if params is not None:
+                        cursor.execute(query, params)
+                    else:
+                        cursor.execute(query)
+                conn.commit()
+        except sqlite3.Error as e:
+            logging.error(f"Database execute_and_commit error: {e}")
+            raise
 
     def increment_url_mention(self, url):
         """Increment MENTION_COUNT for the given URL and return the new count."""

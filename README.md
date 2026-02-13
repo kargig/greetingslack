@@ -19,6 +19,19 @@ pip3 install -r requirements.txt
 python bot.py &
 ```
 
+## Testing
+
+Run the test suite (requires pytest; use the project virtualenv):
+
+```bash
+python -m venv .venv
+. .venv/bin/activate   # or: source .venv/bin/activate
+pip install -r requirements.txt
+pytest tests/ -v
+```
+
+Tests cover helpers (FindURL, unescape, message predicates), `db_api` (init, query, execute_and_commit, increment_url_mention), `quote_api` (quotes, URLs, files), commands (!help, !cache, !stats), `get_bot_channels` (including the correct Slack API endpoint), and `handle_event` / `parse_message` with mocked Slack.
+
 ## Q&A
 
 ### Q1. How do you change the welcome message?
